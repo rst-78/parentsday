@@ -9,34 +9,34 @@
         :root {
             --bg-color: #fcf1f1;
             --coupon-red: #ff6b6b;
-            --card-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+            --card-shadow: 0 10px 25px rgba(0, 0, 0, 0.18);
         }
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: var(--bg-color); font-family: 'Apple SD Gothic Neo', sans-serif; }
         #app { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-        .instruction { position: absolute; top: 8%; color: #999; font-size: 0.85rem; text-align: center; line-height: 1.6; }
+        .instruction { position: absolute; top: 8%; color: #999; font-size: 0.85rem; text-align: center; line-height: 1.6; z-index: 100; }
         .coupon-stack { position: relative; width: 300px; height: 460px; perspective: 1200px; }
-        .coupon-card { position: absolute; width: 100%; height: 100%; background: white; border-radius: 18px; border: 1px solid rgba(0, 0, 0, 0.08); box-shadow: var(--card-shadow); display: flex; flex-direction: column; transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s; touch-action: none; background-image: radial-gradient(#fff 70%, #f9f9f9 100%); }
+        .coupon-card { position: absolute; width: 100%; height: 100%; background: white; border-radius: 18px; border: 1px solid rgba(0, 0, 0, 0.1); box-shadow: var(--card-shadow); display: flex; flex-direction: column; transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s; touch-action: none; }
         .coupon-stub { height: 90px; background: var(--coupon-red); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; border-radius: 16px 16px 0 0; font-weight: 800; font-size: 0.85rem; letter-spacing: 1px; }
         .perforation { height: 2px; border-top: 3px dashed #eee; margin: 0 12px; position: relative; z-index: 5; }
-        .coupon-body { flex: 1; background: white; border-radius: 0 0 16px 16px; display: flex; flex-direction: column; justify-content: center; align-items: center; position: relative; transform-origin: top center; }
+        .coupon-body { flex: 1; background: white; border-radius: 0 0 16px 16px; display: flex; flex-direction: column; justify-content: center; align-items: center; position: relative; transform-origin: top center; background-image: radial-gradient(#fff 70%, #fefefe 100%); }
         .coupon-title { font-size: 1.9rem; font-weight: 900; color: #222; }
         .coupon-desc { font-size: 0.8rem; color: #ff8e8e; margin-top: 15px; font-weight: 600; }
         .send-to-back { animation: sendBack 0.7s ease-in-out forwards; }
         @keyframes sendBack {
-            0% { transform: translateY(0) scale(1) rotate(0); z-index: 20; }
-            45% { transform: translateY(-125%) scale(0.9) rotate(-7deg); z-index: 20; }
+            0% { transform: translateY(0) scale(1) rotate(0); z-index: 50; }
+            45% { transform: translateY(-125%) scale(0.9) rotate(-7deg); z-index: 50; }
             55% { z-index: 1; }
             100% { transform: translateY(8px) scale(0.9) rotate(0); z-index: 1; }
         }
         .empty-msg { text-align: center; }
-        .reset-btn { margin-top: 25px; padding: 14px 28px; border: none; background: var(--coupon-red); color: white; border-radius: 30px; font-weight: bold; }
+        .reset-btn { margin-top: 25px; padding: 14px 28px; border: none; background: var(--coupon-red); color: white; border-radius: 30px; font-weight: bold; cursor: pointer; }
     </style>
 </head>
 <body>
 
 <div id="app">
     <div class="instruction">
-        <b>밀어서</b> 다음 쿠폰 보기<br><b>세게 당겨서</b> 쿠폰 사용하기
+        <b>위로 밀면</b> 다음 쿠폰<br><b>아래로 당기면</b> 쿠폰 사용
     </div>
     <div class="coupon-stack" id="couponStack"></div>
 </div>
@@ -52,18 +52,9 @@
 
     let coupons = [];
 
-    function shuffle(array) {
-        let currentIndex = array.length, randomIndex;
-        while (currentIndex != 0) {
-            randomIndex = Math.floor(Math.random() * currentIndex);
-            currentIndex--;
-            [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
-        }
-        return array;
-    }
-
     function init() {
-        const saved = localStorage.getItem('parent_coupons_final');
+        // 기존 데이터를 불러오거나 새로 만듦
+        const saved = localStorage.getItem('parent_coupons_v5');
         let tempCoupons = [];
 
         if (saved) {
@@ -71,22 +62,33 @@
         } else {
             couponTypes.forEach((type, idx) => {
                 for(let i=0; i<type.count; i++) {
-                    tempCoupons.push({ uid: `${idx}-${i}-${Math.random()}`, title: type.title, used: false });
+                    tempCoupons.push({ 
+                        uid: `${idx}-${i}-${Math.random().toString(36).substr(2, 9)}`, 
+                        title: type.title, 
+                        used: false 
+                    });
                 }
             });
         }
         
-        const usedOnes = tempCoupons.filter(c => c.used);
-        const unusedOnes = tempCoupons.filter(c => !c.used);
+        // 사용하지 않은 것과 사용한 것 분리
+        let unused = tempCoupons.filter(c => !c.used);
+        let used = tempCoupons.filter(c => c.used);
         
-        // 남은 쿠폰들을 섞어서 전역 배열 앞에 배치
-        coupons = [...shuffle(unusedOnes), ...usedOnes];
+        // 사용하지 않은 쿠폰들만 무작위로 섞음 (새로고침 시마다 실행)
+        for (let i = unused.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [unused[i], unused[j]] = [unused[j], unused[i]];
+        }
         
-        save();
+        // 합치기 (사용 안 한 게 무조건 앞으로)
+        coupons = [...unused, ...used];
+        
+        // 섞인 결과 저장
+        localStorage.setItem('parent_coupons_v5', JSON.stringify(coupons));
+        
         render();
     }
-
-    function save() { localStorage.setItem('parent_coupons_final', JSON.stringify(coupons)); }
 
     function render() {
         const stack = document.getElementById('couponStack');
@@ -94,25 +96,26 @@
         const available = coupons.filter(c => !c.used);
 
         if (available.length === 0) {
-            stack.innerHTML = `<div class="empty-msg"><h2>❤️ 효도 대성공 ❤️</h2><button class="reset-btn" onclick="reset()">쿠폰북 리필하기</button></div>`;
+            stack.innerHTML = `<div class="empty-msg"><h2>❤️ 모든 효도 완료 ❤️</h2><button class="reset-btn" onclick="reset()">다시 선물하기</button></div>`;
             return;
         }
 
+        // 시각적으로 5장만 표현
         available.slice(0, 5).forEach((coupon, index) => {
             const card = document.createElement('div');
             card.className = 'coupon-card';
             const ty = index * 8;
             const sc = 1 - (index * 0.04);
-            card.style.zIndex = available.length - index;
+            card.style.zIndex = 50 - index;
             card.style.transform = `translateY(${ty}px) scale(${sc})`;
-            card.style.boxShadow = `0 ${10 - index*2}px ${25 - index*3}px rgba(0,0,0,${0.15 - index*0.02})`;
+            card.style.boxShadow = `0 ${10 - index*2}px ${25 - index*3}px rgba(0,0,0,${0.18 - index*0.02})`;
 
             card.innerHTML = `
                 <div class="coupon-stub"><span>PARENT'S DAY</span><span>SPECIAL GIFT</span></div>
                 <div class="perforation"></div>
                 <div class="coupon-body">
                     <div class="coupon-title">${coupon.title}</div>
-                    <div class="coupon-desc">▼ 아래로 당기면 툭!</div>
+                    <div class="coupon-desc">▼ 아래로 찢어서 사용</div>
                 </div>
             `;
             stack.appendChild(card);
@@ -129,36 +132,37 @@
         mc.on('panmove', (e) => {
             if (isActive) return;
             if (e.deltaY > 0) {
-                body.style.transform = `translateY(${e.deltaY}px) rotate(${e.deltaX * 0.08}deg)`;
+                body.style.transform = `translateY(${e.deltaY}px) rotate(${e.deltaX * 0.1}deg)`;
             } else {
                 card.style.transform = `translateY(${e.deltaY}px) scale(1.03)`;
             }
         });
 
         mc.on('panend', (e) => {
-            if (e.deltaY > 170) {
+            if (e.deltaY > 160) {
                 isActive = true;
                 body.style.transition = 'transform 0.5s ease-in, opacity 0.4s';
                 body.style.transform = `translateY(800px) rotate(${e.deltaX * 0.3}deg)`;
                 body.style.opacity = '0';
                 setTimeout(() => {
-                    coupon.used = true;
-                    save();
+                    const target = coupons.find(c => c.uid === coupon.uid);
+                    if(target) target.used = true;
+                    localStorage.setItem('parent_coupons_v5', JSON.stringify(coupons));
                     render();
                 }, 500);
             } else if (e.deltaY < -100) {
                 isActive = true;
                 card.classList.add('send-to-back');
                 setTimeout(() => {
-                    // 현재 첫 번째 카드를 찾아서 맨 뒤로 보냄
                     const currentIdx = coupons.findIndex(c => c.uid === coupon.uid);
                     const item = coupons.splice(currentIdx, 1)[0];
                     coupons.push(item);
+                    localStorage.setItem('parent_coupons_v5', JSON.stringify(coupons));
                     render();
                     isActive = false;
                 }, 700);
             } else {
-                body.style.transition = 'transform 0.4s ease';
+                body.style.transition = 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
                 body.style.transform = '';
                 card.style.transform = 'translateY(0) scale(1)';
             }
@@ -166,10 +170,11 @@
     }
 
     function reset() {
-        localStorage.removeItem('parent_coupons_final');
+        localStorage.removeItem('parent_coupons_v5');
         location.reload();
     }
 
+    // 시작
     init();
 </script>
 </body>

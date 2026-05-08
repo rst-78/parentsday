@@ -44,8 +44,10 @@
 </div>
 
 <script>
-    const STORAGE_KEY = 'REAL_FINAL_COUPON_DATA_V1';
-    const couponTypes = [
+    // 저장소 키 이름을 변경하여 이전 데이터와 충돌을 방지합니다.
+    const STORAGE_KEY = 'COUPON_SYSTEM_V3';
+    
+    const initialData = [
         { title: "빨래 널기", count: 2 },
         { title: "빨래 개기", count: 2 },
         { title: "분리 수거", count: 5 },
@@ -53,9 +55,11 @@
         { title: "안마 5분", count: 6 }
     ];
 
-    let coupons = [];
+    let state = {
+        coupons: []
+    };
 
-    function shuffleArray(array) {
+    function shuffle(array) {
         for (let i = array.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [array[i], array[j]] = [array[j], array[i]];
@@ -63,43 +67,43 @@
         return array;
     }
 
+    // 초기화 함수
     function init() {
-        const saved = localStorage.getItem(STORAGE_KEY);
+        const savedData = localStorage.getItem(STORAGE_KEY);
         
-        if (saved) {
-            // 저장된 데이터가 있으면 불러오기
-            coupons = JSON.parse(saved);
-            
-            // 사용하지 않은 쿠폰들만 이번 세션용으로 다시 한번 섞기 (선택사항)
-            const unused = coupons.filter(c => !c.used);
-            const used = coupons.filter(c => c.used);
-            coupons = [...shuffleArray(unused), ...used];
+        if (savedData) {
+            state.coupons = JSON.parse(savedData);
         } else {
-            // 최초 접속 시 데이터 생성
-            let flatList = [];
-            couponTypes.forEach((type, idx) => {
-                for(let i=0; i<type.count; i++) {
-                    flatList.push({ 
-                        uid: `c-${idx}-${i}-${Math.random().toString(36).substr(2, 5)}`, 
-                        title: type.title, 
-                        used: false 
+            // 처음 실행 시 전체 목록 생성 및 섞기
+            let temp = [];
+            initialData.forEach((item, idx) => {
+                for(let i=0; i<item.count; i++) {
+                    temp.push({
+                        id: `cp-${idx}-${i}-${Math.random().toString(36).substr(2, 5)}`,
+                        title: item.title,
+                        used: false
                     });
                 }
             });
-            coupons = shuffleArray(flatList);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(coupons));
+            state.coupons = shuffle(temp);
+            saveState();
         }
         render();
+    }
+
+    // 상태 저장 함수
+    function saveState() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.coupons));
     }
 
     function render() {
         const stack = document.getElementById('couponStack');
         stack.innerHTML = '';
         
-        // 중요: used가 false인 쿠폰만 화면에 그림
-        const available = coupons.filter(c => !c.used);
+        // 사용하지 않은 쿠폰만 필터링
+        const activeCoupons = state.coupons.filter(c => !c.used);
 
-        if (available.length === 0) {
+        if (activeCoupons.length === 0) {
             stack.innerHTML = `
                 <div class="empty-msg">
                     <span class="final-heart">❤️</span>
@@ -109,13 +113,12 @@
             return;
         }
 
-        available.slice(0, 5).forEach((coupon, index) => {
+        // 화면에는 최대 5장만 표시
+        activeCoupons.slice(0, 5).forEach((coupon, index) => {
             const card = document.createElement('div');
             card.className = 'coupon-card';
-            const ty = index * 8;
-            const sc = 1 - (index * 0.04);
             card.style.zIndex = 50 - index;
-            card.style.transform = `translateY(${ty}px) scale(${sc})`;
+            card.style.transform = `translateY(${index * 8}px) scale(${1 - index * 0.04})`;
 
             card.innerHTML = `
                 <div class="coupon-stub"><span>PARENT'S DAY</span><span>SPECIAL GIFT</span></div>
@@ -126,18 +129,20 @@
                 </div>
             `;
             stack.appendChild(card);
-            if (index === 0) setupHammer(card, coupon);
+            
+            // 맨 위 카드에만 스와이프 기능 부여
+            if (index === 0) attachEvent(card, coupon);
         });
     }
 
-    function setupHammer(card, coupon) {
-        const mc = new Hammer.Manager(card);
-        mc.add(new Hammer.Pan({ direction: Hammer.DIRECTION_ALL, threshold: 0 }));
+    function attachEvent(card, coupon) {
+        const hammer = new Hammer.Manager(card);
+        hammer.add(new Hammer.Pan({ direction: Hammer.DIRECTION_ALL, threshold: 0 }));
         const body = card.querySelector('.coupon-body');
-        let isActive = false;
+        let isProcessing = false;
 
-        mc.on('panmove', (e) => {
-            if (isActive) return;
+        hammer.on('panmove', (e) => {
+            if (isProcessing) return;
             if (e.deltaY > 0) {
                 body.style.transform = `translateY(${e.deltaY}px) rotate(${e.deltaX * 0.1}deg)`;
             } else {
@@ -145,36 +150,41 @@
             }
         });
 
-        mc.on('panend', (e) => {
-            if (e.deltaY > 160) {
-                isActive = true;
-                body.style.transition = 'transform 0.5s ease-in, opacity 0.4s';
-                body.style.transform = `translateY(800px) rotate(${e.deltaX * 0.3}deg)`;
+        hammer.on('panend', (e) => {
+            if (isProcessing) return;
+
+            // 1. 쿠폰 사용 (아래로)
+            if (e.deltaY > 150) {
+                isProcessing = true;
+                body.style.transition = 'transform 0.5s ease-in, opacity 0.3s';
+                body.style.transform = `translateY(800px) rotate(${e.deltaX * 0.2}deg)`;
                 body.style.opacity = '0';
                 
                 setTimeout(() => {
-                    // 데이터 업데이트 및 저장
-                    const targetIdx = coupons.findIndex(c => c.uid === coupon.uid);
-                    if (targetIdx !== -1) {
-                        coupons[targetIdx].used = true;
-                        localStorage.setItem(STORAGE_KEY, JSON.stringify(coupons));
-                    }
+                    // 데이터에서 해당 쿠폰을 '사용됨'으로 변경
+                    const target = state.coupons.find(c => c.id === coupon.id);
+                    if (target) target.used = true;
+                    saveState(); // 즉시 저장
                     render();
-                }, 500);
-            } else if (e.deltaY < -100) {
-                isActive = true;
+                }, 400);
+            } 
+            // 2. 순서 넘기기 (위로)
+            else if (e.deltaY < -100) {
+                isProcessing = true;
                 card.classList.add('send-to-back');
                 setTimeout(() => {
-                    // 순서 변경 후 저장
-                    const currentIdx = coupons.findIndex(c => c.uid === coupon.uid);
-                    const item = coupons.splice(currentIdx, 1)[0];
-                    coupons.push(item);
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(coupons));
+                    // 현재 쿠폰을 배열의 맨 끝으로 보냄
+                    const idx = state.coupons.findIndex(c => c.id === coupon.id);
+                    const item = state.coupons.splice(idx, 1)[0];
+                    state.coupons.push(item);
+                    saveState(); // 순서 변경 저장
                     render();
-                    isActive = false;
+                    isProcessing = false;
                 }, 700);
-            } else {
-                body.style.transition = 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+            } 
+            // 3. 제자리로
+            else {
+                body.style.transition = 'transform 0.3s ease-out';
                 body.style.transform = '';
                 card.style.transform = 'translateY(0) scale(1)';
             }

@@ -29,8 +29,8 @@
             55% { z-index: 1; }
             100% { transform: translateY(8px) scale(0.9) rotate(0); z-index: 1; }
         }
-        .empty-msg { text-align: center; }
-        .reset-btn { margin-top: 25px; padding: 14px 28px; border: none; background: var(--coupon-red); color: white; border-radius: 30px; font-weight: bold; cursor: pointer; }
+        .empty-msg { text-align: center; color: #333; }
+        .final-heart { font-size: 4rem; margin-bottom: 10px; display: block; }
     </style>
 </head>
 <body>
@@ -53,7 +53,6 @@
 
     let coupons = [];
 
-    // 셔플 함수 (Fisher-Yates)
     function shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
@@ -63,13 +62,11 @@
     }
 
     function init() {
-        const saved = localStorage.getItem('parent_coupons_mixed');
+        const saved = localStorage.getItem('parent_coupons_final_sealed');
         
         if (saved) {
-            // 이미 저장된 순서가 있으면 그대로 가져옵니다.
             coupons = JSON.parse(saved);
         } else {
-            // 처음 접속 시: 모든 쿠폰을 낱개로 생성해서 바구니에 담습니다.
             let flatList = [];
             couponTypes.forEach((type, idx) => {
                 for(let i=0; i<type.count; i++) {
@@ -80,31 +77,33 @@
                     });
                 }
             });
-            // 바구니에 담긴 18장의 쿠폰을 완전히 무작위로 섞습니다.
             coupons = shuffleArray(flatList);
             save();
         }
-        
         render();
     }
 
     function save() {
-        localStorage.setItem('parent_coupons_mixed', JSON.stringify(coupons));
+        localStorage.setItem('parent_coupons_final_sealed', JSON.stringify(coupons));
     }
 
     function render() {
         const stack = document.getElementById('couponStack');
         stack.innerHTML = '';
         
-        // 사용하지 않은 쿠폰들만 추려냅니다 (이미 섞인 상태 유지)
         const available = coupons.filter(c => !c.used);
 
         if (available.length === 0) {
-            stack.innerHTML = `<div class="empty-msg"><h2>❤️ 모든 효도 완료 ❤️</h2><button class="reset-btn" onclick="reset()">쿠폰북 리필하기</button></div>`;
+            // 리필 버튼을 삭제하고 깔끔한 감사 문구만 남겼습니다.
+            stack.innerHTML = `
+                <div class="empty-msg">
+                    <span class="final-heart">❤️</span>
+                    <h2>효도 대성공!</h2>
+                    <p>모든 쿠폰을 사용하셨습니다.<br>사랑해요 엄마 아빠!</p>
+                </div>`;
             return;
         }
 
-        // 화면에는 앞에 있는 5장만 겹쳐서 보여줍니다.
         available.slice(0, 5).forEach((coupon, index) => {
             const card = document.createElement('div');
             card.className = 'coupon-card';
@@ -125,7 +124,6 @@
             `;
             stack.appendChild(card);
             
-            // 맨 앞의 카드에만 인터랙션 부여
             if (index === 0) setupHammer(card, coupon);
         });
     }
@@ -139,16 +137,13 @@
         mc.on('panmove', (e) => {
             if (isActive) return;
             if (e.deltaY > 0) {
-                // 아래로 당길 때 손가락 따라 회전 및 이동
                 body.style.transform = `translateY(${e.deltaY}px) rotate(${e.deltaX * 0.1}deg)`;
             } else {
-                // 위로 밀 때 살짝 커짐
                 card.style.transform = `translateY(${e.deltaY}px) scale(1.03)`;
             }
         });
 
         mc.on('panend', (e) => {
-            // 1. 찢기 성공
             if (e.deltaY > 160) {
                 isActive = true;
                 body.style.transition = 'transform 0.5s ease-in, opacity 0.4s';
@@ -160,12 +155,10 @@
                     render();
                 }, 500);
             } 
-            // 2. 맨 뒤로 보내기 (위로 스와이프)
             else if (e.deltaY < -100) {
                 isActive = true;
                 card.classList.add('send-to-back');
                 setTimeout(() => {
-                    // 현재 쿠폰을 전체 리스트의 맨 뒤로 이동시킴 (루프)
                     const currentIdx = coupons.findIndex(c => c.uid === coupon.uid);
                     const item = coupons.splice(currentIdx, 1)[0];
                     coupons.push(item);
@@ -174,20 +167,12 @@
                     isActive = false;
                 }, 700);
             } 
-            // 3. 취소 (복귀)
             else {
                 body.style.transition = 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
                 body.style.transform = '';
                 card.style.transform = 'translateY(0) scale(1)';
             }
         });
-    }
-
-    function reset() {
-        if(confirm("쿠폰북을 새로 만드시겠습니까? (순서가 다시 섞입니다)")) {
-            localStorage.removeItem('parent_coupons_mixed');
-            location.reload();
-        }
     }
 
     init();

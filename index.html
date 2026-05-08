@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>어버이날 사랑의 쿠폰북</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #fcf1f1;
+            --coupon-red: #ff6b6b;
+            /* 더 깊은 그림자로 입체감 부여 */
+            --card-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+            --stack-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        body, html {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            font-family: 'Apple SD Gothic Neo', sans-serif;
+        }
+
+        #app {
+            position: relative;
+            width: 100%; height: 100%;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+        }
+
+        .instruction {
+            position: absolute; top: 8%; color: #999; font-size: 0.85rem;
+            text-align: center; line-height: 1.6;
+        }
+
+        /* 쿠폰 스택 */
+        .coupon-stack {
+            position: relative;
+            width: 300px; height: 460px;
+            perspective: 1200px;
+        }
+
+        /* 개별 카드 스타일 보강 */
+        .coupon-card {
+            position: absolute;
+            width: 100%; height: 100%;
+            background: white;
+            border-radius: 18px;
+            /* 테두리와 그림자로 뒷장과 확실히 구분 */
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            box-shadow: var(--card-shadow);
+            display: flex; flex-direction: column;
+            overflow: visible;
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s, box-shadow 0.3s;
+            touch-action: none;
+            background-image: radial-gradient(#fff 70%, #f9f9f9 100%);
+        }
+
+        /* 상단 고정부 */
+        .coupon-stub {
+            height: 90px;
+            background: var(--coupon-red);
+            color: white;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            border-radius: 16px 16px 0 0;
+            font-weight: 800; font-size: 0.85rem;
+            letter-spacing: 1px;
+            box-shadow: inset 0 -5px 10px rgba(0,0,0,0.05);
+        }
+
+        /* 절취선 디자인 */
+        .perforation {
+            height: 2px;
+            border-top: 3px dashed #eee;
+            background: transparent;
+            margin: 0 12px;
+            position: relative;
+            z-index: 5;
+        }
+
+        /* 찢어지는 하단 몸체 */
+        .coupon-body {
+            flex: 1;
+            background: white;
+            border-radius: 0 0 16px 16px;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            position: relative;
+            transform-origin: top center;
+            /* 찢어질 때 몸체에도 별도 그림자 부여 */
+            box-shadow: 0 5px 15px rgba(0,0,0,0.03);
+        }
+
+        .coupon-title { 
+            font-size: 1.9rem; font-weight: 900; color: #222; 
+            text-shadow: 1px 1px 0px rgba(0,0,0,0.05);
+        }
+        .coupon-desc { font-size: 0.8rem; color: #ff8e8e; margin-top: 15px; font-weight: 600; }
+
+        /* 넘기기 애니메이션 */
+        .send-to-back {
+            animation: sendBack 0.7s ease-in-out forwards;
+        }
+
+        @keyframes sendBack {
+            0% { transform: translateY(0) scale(1) rotate(0); z-index: 20; }
+            45% { transform: translateY(-125%) scale(0.9) rotate(-7deg); z-index: 20; }
+            55% { z-index: 1; }
+            100% { transform: translateY(8px) scale(0.9) rotate(0); z-index: 1; }
+        }
+
+        /* 마지막 메시지 */
+        .empty-msg { text-align: center; }
+        .reset-btn {
+            margin-top: 25px; padding: 14px 28px;
+            border: none; background: var(--coupon-red);
+            color: white; border-radius: 30px; font-weight: bold;
+            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
+        }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <div class="instruction">
+        <b>밀어서</b> 다음 쿠폰 보기<br><b>세게 당겨서</b> 쿠폰 사용하기
+    </div>
+    <div class="coupon-stack" id="couponStack"></div>
+</div>
+
+<script>
+    const couponTypes = [
+        { title: "빨래 널기", count: 2 },
+        { title: "빨래 개기", count: 2 },
+        { title: "분리 수거", count: 5 },
+        { title: "뽀뽀 산책", count: 3 },
+        { title: "안마 5분", count: 6 }
+    ];
+
+    let coupons = [];
+
+    function init() {
+        const saved = localStorage.getItem('parent_coupons_v3');
+        if (saved) {
+            coupons = JSON.parse(saved);
+        } else {
+            couponTypes.forEach((type, idx) => {
+                for(let i=0; i<type.count; i++) {
+                    coupons.push({ uid: `${idx}-${i}`, title: type.title, used: false });
+                }
+            });
+            save();
+        }
+        render();
+    }
+
+    function save() { localStorage.setItem('parent_coupons_v3', JSON.stringify(coupons)); }
+
+    function render() {
+        const stack = document.getElementById('couponStack');
+        stack.innerHTML = '';
+        const available = coupons.filter(c => !c.used);
+
+        if (available.length === 0) {
+            stack.innerHTML = `<div class="empty-msg"><h2>❤️ 효도 대성공 ❤️</h2><p>모든 쿠폰을 사용하셨습니다.</p><button class="reset-btn" onclick="reset()">쿠폰북 리필하기</button></div>`;
+            return;
+        }
+
+        // 최대 5장까지만 시각적으로 겹쳐 보이게 렌더링
+        const displayLimit = 5;
+        available.slice(0, displayLimit).forEach((coupon, index) => {
+            const card = document.createElement('div');
+            card.className = 'coupon-card';
+            
+            // 뒷장일수록 조금씩 아래로 내려가고 작아지는 효과 (입체감)
+            const ty = index * 8;
+            const sc = 1 - (index * 0.04);
+            card.style.zIndex = available.length - index;
+            card.style.transform = `translateY(${ty}px) scale(${sc})`;
+            
+            // 뒷장의 그림자는 더 연하게 처리하여 거리감 부여
+            card.style.boxShadow = `0 ${10 - index*2}px ${25 - index*3}px rgba(0,0,0,${0.15 - index*0.02})`;
+
+            card.innerHTML = `
+                <div class="coupon-stub"><span>PARENT'S DAY</span><span>SPECIAL GIFT</span></div>
+                <div class="perforation"></div>
+                <div class="coupon-body">
+                    <div class="coupon-title">${coupon.title}</div>
+                    <div class="coupon-desc">▼ 아래로 당기면 툭!</div>
+                </div>
+            `;
+
+            stack.appendChild(card);
+
+            if (index === 0) setupHammer(card, coupon);
+        });
+    }
+
+    function setupHammer(card, coupon) {
+        const mc = new Hammer.Manager(card);
+        mc.add(new Hammer.Pan({ direction: Hammer.DIRECTION_ALL, threshold: 0 }));
+        
+        const body = card.querySelector('.coupon-body');
+        let isActive = false;
+
+        mc.on('panmove', (e) => {
+            if (isActive) return;
+
+            if (e.deltaY > 0) { // 아래로 찢기
+                const rot = e.deltaX * 0.08;
+                body.style.transform = `translateY(${e.deltaY}px) rotate(${rot}deg)`;
+                // 찢어질 때 그림자를 더 진하게 해서 들리는 느낌 강조
+                body.style.boxShadow = `0 ${20 + e.deltaY/5}px 30px rgba(0,0,0,0.2)`;
+            } else { // 위로 넘기기 준비
+                card.style.transform = `translateY(${e.deltaY}px) scale(1.03)`;
+                card.style.boxShadow = `0 20px 40px rgba(0,0,0,0.2)`;
+            }
+        });
+
+        mc.on('panend', (e) => {
+            if (e.deltaY > 170) { // 찢기 확정
+                isActive = true;
+                body.style.transition = 'transform 0.5s cubic-bezier(0.6, -0.28, 0.735, 0.045), opacity 0.4s';
+                body.style.transform = `translateY(800px) rotate(${e.deltaX * 0.3}deg)`;
+                body.style.opacity = '0';
+                
+                setTimeout(() => {
+                    coupon.used = true;
+                    save();
+                    render();
+                }, 500);
+            } 
+            else if (e.deltaY < -100) { // 뒤로 보내기 확정
+                isActive = true;
+                card.classList.add('send-to-back');
+                setTimeout(() => {
+                    // 첫 번째 요소를 맨 뒤로 이동
+                    const availableIndices = coupons.reduce((acc, c, i) => (!c.used ? acc.concat(i) : acc), []);
+                    const firstIdx = availableIndices[0];
+                    const item = coupons.splice(firstIdx, 1)[0];
+                    coupons.push(item);
+                    render();
+                    isActive = false;
+                }, 700);
+            }
+            else { // 복귀
+                body.style.transition = 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+                body.style.transform = '';
+                body.style.boxShadow = '';
+                card.style.transform = `translateY(0) scale(1)`;
+                card.style.boxShadow = '';
+            }
+        });
+    }
+
+    function reset() {
+        if(confirm("모든 쿠폰을 초기화할까요?")) {
+            localStorage.removeItem('parent_coupons_v3');
+            location.reload();
+        }
+    }
+
+    init();
+</script>
+
+</body>
+</html>

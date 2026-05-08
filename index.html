@@ -29,8 +29,13 @@
             55% { z-index: 1; }
             100% { transform: translateY(8px) scale(0.9) rotate(0); z-index: 1; }
         }
-        .empty-msg { text-align: center; color: #333; }
-        .final-heart { font-size: 4rem; margin-bottom: 10px; display: block; }
+        .empty-msg { text-align: center; color: #333; padding: 20px; }
+        .final-heart { font-size: 4rem; margin-bottom: 10px; display: block; animation: heartbeat 1.5s infinite; }
+        @keyframes heartbeat {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
     </style>
 </head>
 <body>
@@ -43,6 +48,7 @@
 </div>
 
 <script>
+    // 1. 쿠폰 데이터 설정
     const couponTypes = [
         { title: "빨래 널기", count: 2 },
         { title: "빨래 개기", count: 2 },
@@ -53,6 +59,7 @@
 
     let coupons = [];
 
+    // 2. 섞기 함수
     function shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
@@ -61,8 +68,10 @@
         return array;
     }
 
+    // 3. 초기화 (로컬 스토리지 키를 완전히 새롭게 설정하여 이전 리필 버튼 데이터를 무시합니다)
     function init() {
-        const saved = localStorage.getItem('parent_coupons_final_sealed');
+        const STORAGE_KEY = 'parents_day_coupon_final_no_reset';
+        const saved = localStorage.getItem(STORAGE_KEY);
         
         if (saved) {
             coupons = JSON.parse(saved);
@@ -78,28 +87,25 @@
                 }
             });
             coupons = shuffleArray(flatList);
-            save();
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(coupons));
         }
-        render();
+        render(STORAGE_KEY);
     }
 
-    function save() {
-        localStorage.setItem('parent_coupons_final_sealed', JSON.stringify(coupons));
-    }
-
-    function render() {
+    // 4. 화면 렌더링
+    function render(key) {
         const stack = document.getElementById('couponStack');
         stack.innerHTML = '';
         
         const available = coupons.filter(c => !c.used);
 
+        // 쿠폰이 없으면 감사 메시지만 출력 (버튼 절대 없음)
         if (available.length === 0) {
-            // 리필 버튼을 삭제하고 깔끔한 감사 문구만 남겼습니다.
             stack.innerHTML = `
                 <div class="empty-msg">
                     <span class="final-heart">❤️</span>
                     <h2>효도 대성공!</h2>
-                    <p>모든 쿠폰을 사용하셨습니다.<br>사랑해요 엄마 아빠!</p>
+                    <p>모든 쿠폰을 기쁘게 사용하셨습니다.<br>사랑합니다 엄마 아빠!</p>
                 </div>`;
             return;
         }
@@ -124,11 +130,12 @@
             `;
             stack.appendChild(card);
             
-            if (index === 0) setupHammer(card, coupon);
+            if (index === 0) setupHammer(card, coupon, key);
         });
     }
 
-    function setupHammer(card, coupon) {
+    // 5. 터치 인터랙션 설정
+    function setupHammer(card, coupon, key) {
         const mc = new Hammer.Manager(card);
         mc.add(new Hammer.Pan({ direction: Hammer.DIRECTION_ALL, threshold: 0 }));
         const body = card.querySelector('.coupon-body');
@@ -144,6 +151,7 @@
         });
 
         mc.on('panend', (e) => {
+            // 찢기 (사용)
             if (e.deltaY > 160) {
                 isActive = true;
                 body.style.transition = 'transform 0.5s ease-in, opacity 0.4s';
@@ -151,10 +159,11 @@
                 body.style.opacity = '0';
                 setTimeout(() => {
                     coupon.used = true;
-                    save();
-                    render();
+                    localStorage.setItem(key, JSON.stringify(coupons));
+                    render(key);
                 }, 500);
             } 
+            // 뒤로 보내기 (넘기기)
             else if (e.deltaY < -100) {
                 isActive = true;
                 card.classList.add('send-to-back');
@@ -162,11 +171,12 @@
                     const currentIdx = coupons.findIndex(c => c.uid === coupon.uid);
                     const item = coupons.splice(currentIdx, 1)[0];
                     coupons.push(item);
-                    save();
-                    render();
+                    localStorage.setItem(key, JSON.stringify(coupons));
+                    render(key);
                     isActive = false;
                 }, 700);
             } 
+            // 복귀
             else {
                 body.style.transition = 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
                 body.style.transform = '';

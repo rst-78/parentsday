@@ -31,24 +31,20 @@
         }
         .empty-msg { text-align: center; color: #333; padding: 20px; }
         .final-heart { font-size: 4rem; margin-bottom: 10px; display: block; animation: heartbeat 1.5s infinite; }
-        @keyframes heartbeat {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
-        }
+        @keyframes heartbeat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
     </style>
 </head>
 <body>
 
 <div id="app">
     <div class="instruction">
-        <b>위로 밀어서</b> 다음 쿠폰 보기<br><b>아래로 당겨서</b> 쿠폰 사용하기
+        <b>위로 밀면</b> 다음 쿠폰<br><b>아래로 당기면</b> 쿠폰 사용
     </div>
     <div class="coupon-stack" id="couponStack"></div>
 </div>
 
 <script>
-    // 1. 쿠폰 데이터 설정
+    const STORAGE_KEY = 'REAL_FINAL_COUPON_DATA_V1';
     const couponTypes = [
         { title: "빨래 널기", count: 2 },
         { title: "빨래 개기", count: 2 },
@@ -59,7 +55,6 @@
 
     let coupons = [];
 
-    // 2. 섞기 함수
     function shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
@@ -68,19 +63,24 @@
         return array;
     }
 
-    // 3. 초기화 (로컬 스토리지 키를 완전히 새롭게 설정하여 이전 리필 버튼 데이터를 무시합니다)
     function init() {
-        const STORAGE_KEY = 'parents_day_coupon_final_no_reset';
         const saved = localStorage.getItem(STORAGE_KEY);
         
         if (saved) {
+            // 저장된 데이터가 있으면 불러오기
             coupons = JSON.parse(saved);
+            
+            // 사용하지 않은 쿠폰들만 이번 세션용으로 다시 한번 섞기 (선택사항)
+            const unused = coupons.filter(c => !c.used);
+            const used = coupons.filter(c => c.used);
+            coupons = [...shuffleArray(unused), ...used];
         } else {
+            // 최초 접속 시 데이터 생성
             let flatList = [];
             couponTypes.forEach((type, idx) => {
                 for(let i=0; i<type.count; i++) {
                     flatList.push({ 
-                        uid: `${idx}-${i}-${Math.random().toString(36).substr(2, 9)}`, 
+                        uid: `c-${idx}-${i}-${Math.random().toString(36).substr(2, 5)}`, 
                         title: type.title, 
                         used: false 
                     });
@@ -89,23 +89,22 @@
             coupons = shuffleArray(flatList);
             localStorage.setItem(STORAGE_KEY, JSON.stringify(coupons));
         }
-        render(STORAGE_KEY);
+        render();
     }
 
-    // 4. 화면 렌더링
-    function render(key) {
+    function render() {
         const stack = document.getElementById('couponStack');
         stack.innerHTML = '';
         
+        // 중요: used가 false인 쿠폰만 화면에 그림
         const available = coupons.filter(c => !c.used);
 
-        // 쿠폰이 없으면 감사 메시지만 출력 (버튼 절대 없음)
         if (available.length === 0) {
             stack.innerHTML = `
                 <div class="empty-msg">
                     <span class="final-heart">❤️</span>
                     <h2>효도 대성공!</h2>
-                    <p>모든 쿠폰을 기쁘게 사용하셨습니다.<br>사랑합니다 엄마 아빠!</p>
+                    <p>모든 쿠폰을 사용하셨습니다.<br>사랑해요 엄마 아빠!</p>
                 </div>`;
             return;
         }
@@ -113,12 +112,10 @@
         available.slice(0, 5).forEach((coupon, index) => {
             const card = document.createElement('div');
             card.className = 'coupon-card';
-            
             const ty = index * 8;
             const sc = 1 - (index * 0.04);
             card.style.zIndex = 50 - index;
             card.style.transform = `translateY(${ty}px) scale(${sc})`;
-            card.style.boxShadow = `0 ${10 - index*2}px ${25 - index*3}px rgba(0,0,0,${0.18 - index*0.02})`;
 
             card.innerHTML = `
                 <div class="coupon-stub"><span>PARENT'S DAY</span><span>SPECIAL GIFT</span></div>
@@ -129,13 +126,11 @@
                 </div>
             `;
             stack.appendChild(card);
-            
-            if (index === 0) setupHammer(card, coupon, key);
+            if (index === 0) setupHammer(card, coupon);
         });
     }
 
-    // 5. 터치 인터랙션 설정
-    function setupHammer(card, coupon, key) {
+    function setupHammer(card, coupon) {
         const mc = new Hammer.Manager(card);
         mc.add(new Hammer.Pan({ direction: Hammer.DIRECTION_ALL, threshold: 0 }));
         const body = card.querySelector('.coupon-body');
@@ -151,33 +146,34 @@
         });
 
         mc.on('panend', (e) => {
-            // 찢기 (사용)
             if (e.deltaY > 160) {
                 isActive = true;
                 body.style.transition = 'transform 0.5s ease-in, opacity 0.4s';
                 body.style.transform = `translateY(800px) rotate(${e.deltaX * 0.3}deg)`;
                 body.style.opacity = '0';
+                
                 setTimeout(() => {
-                    coupon.used = true;
-                    localStorage.setItem(key, JSON.stringify(coupons));
-                    render(key);
+                    // 데이터 업데이트 및 저장
+                    const targetIdx = coupons.findIndex(c => c.uid === coupon.uid);
+                    if (targetIdx !== -1) {
+                        coupons[targetIdx].used = true;
+                        localStorage.setItem(STORAGE_KEY, JSON.stringify(coupons));
+                    }
+                    render();
                 }, 500);
-            } 
-            // 뒤로 보내기 (넘기기)
-            else if (e.deltaY < -100) {
+            } else if (e.deltaY < -100) {
                 isActive = true;
                 card.classList.add('send-to-back');
                 setTimeout(() => {
+                    // 순서 변경 후 저장
                     const currentIdx = coupons.findIndex(c => c.uid === coupon.uid);
                     const item = coupons.splice(currentIdx, 1)[0];
                     coupons.push(item);
-                    localStorage.setItem(key, JSON.stringify(coupons));
-                    render(key);
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(coupons));
+                    render();
                     isActive = false;
                 }, 700);
-            } 
-            // 복귀
-            else {
+            } else {
                 body.style.transition = 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
                 body.style.transform = '';
                 card.style.transform = 'translateY(0) scale(1)';
